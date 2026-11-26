@@ -516,7 +516,7 @@
             <div class="ss">카드·은행 알림을 붙이면 자동으로 채워드려요</div>
           </div>
         </div>
-        <textarea id="pasteInput" rows="2" placeholder="예) [KB국민] 11/25 14:20 12,500원 스타벅스 승인" autocomplete="off"></textarea>
+        <textarea id="pasteInput" rows="2" placeholder="예) [현대카드] 11/25 14:20 12,500원 스타벅스 승인" autocomplete="off"></textarea>
         <div class="paste-actions">
           <button class="paste-btn" id="parseBtn">자동 채우기</button>
           <button class="paste-example" id="exampleBtn">예시</button>
@@ -663,7 +663,17 @@
     {key:"allowance", emoji:"🎁", label:"지원금/용돈", color:"#7FB6E8"},
     {key:"incomeEtc", emoji:"💰", label:"기타수입",    color:"#6FCFC0"}
   ];
-  var METHODS = ["신용카드","체크카드","네이버페이","계좌이체","현금"];
+  var METHODS = ["현대카드","신한카드","하나카드","오빠카드","현금","기타카드"];
+  var DEFAULT_METHOD = METHODS[0];
+  // 예전 버전에서 저장된 결제수단 이름을 새 6종에 맞춰 옮겨 줌 (저장 키 yeondup_budget_v1은 그대로)
+  var LEGACY_METHODS = {"신용카드":"기타카드","체크카드":"기타카드","네이버페이":"기타카드","계좌이체":"현금"};
+  function normalizeMethod(m){
+    if(m == null) return "";
+    m = String(m).trim();
+    if(!m) return "";
+    if(METHODS.indexOf(m) >= 0) return m;
+    return LEGACY_METHODS[m] || m; /* 모르는 이름은 그대로 두어 표시가 깨지지 않게 */
+  }
 
   /* ================= state ================= */
   var state = loadState();
@@ -677,7 +687,7 @@
     type:"expense",
     amount:0,
     date: isoOf(today),
-    method:"신용카드",
+    method:DEFAULT_METHOD,
     category:"food",
     memo:"",
     fixed:false
@@ -731,10 +741,19 @@
       var raw = localStorage.getItem(STORAGE_KEY);
       if(!raw) return {budgets:{}, tx:[]};
       var o = JSON.parse(raw);
-      return {
-        budgets: (o && o.budgets) || {},
-        tx: (o && Array.isArray(o.tx)) ? o.tx : []
-      };
+      var budgets = (o && o.budgets) || {};
+      var tx = (o && Array.isArray(o.tx)) ? o.tx : [];
+      // 예전 결제수단명이 남아 있어도 통계·목록이 깨지지 않게 새 6종으로 정리
+      var changed = false;
+      tx.forEach(function(t){
+        if(!t || typeof t !== "object") return;
+        var next = normalizeMethod(t.method) || "현금";
+        if(t.method !== next){ t.method = next; changed = true; }
+      });
+      if(changed){
+        try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({budgets:budgets, tx:tx})); }catch(e){}
+      }
+      return {budgets:budgets, tx:tx};
     }catch(e){
       return {budgets:{}, tx:[]};
     }
@@ -971,7 +990,7 @@
       type:"expense",
       amount:0,
       date: isoOf(t),
-      method:"신용카드",
+      method:DEFAULT_METHOD,
       category:"food",
       memo:"",
       fixed:false
@@ -988,7 +1007,7 @@
       type: tx.type,
       amount: tx.amount,
       date: tx.date,
-      method: tx.method || "신용카드",
+      method: normalizeMethod(tx.method) || DEFAULT_METHOD,
       category: tx.category || (tx.type==="income"?"incomeEtc":"etc"),
       memo: tx.memo || "",
       fixed: !!tx.fixed
@@ -1253,7 +1272,7 @@
       +   '<button class="row danger" id="resetAll"><span class="s-ico">🗑️</span><span class="s-main"><span class="s-title">전체 데이터 초기화</span><span class="s-sub">저장된 내역과 예산을 모두 지워요</span></span><span class="s-chev">›</span></button>'
       + '</div>';
 
-    html += '<div class="info-note">저장된 내역 <b>'+count+'건</b> · 이 기기의 브라우저에만 저장돼요.<br>연둡 가계부 v1.0</div>';
+    html += '<div class="info-note">저장된 내역 <b>'+count+'건</b> · 이 기기의 브라우저에만 저장돼요.<br>연둡 가계부 v1.1</div>';
 
     document.getElementById("settingsArea").innerHTML = html;
     document.getElementById("saveBudget").onclick = saveBudget;
@@ -1347,7 +1366,7 @@
         type: t.type==="income" ? "income" : "expense",
         amount: amount,
         category: t.category || (t.type==="income"?"incomeEtc":"etc"),
-        method: METHODS.indexOf(t.method)>=0 ? t.method : (t.method || "현금"),
+        method: normalizeMethod(t.method) || "현금",
         memo: t.memo || "",
         fixed: !!t.fixed,
         createdAt: t.createdAt || Date.now()
@@ -1416,23 +1435,23 @@
       return mk+"-"+pad2(day);
     }
     var defs = [
-      ["salary",    "income", 3200000, "계좌이체", "월급", true, 14],
-      ["allowance", "income",  500000, "계좌이체", "아동수당·부모급여", false, 12],
-      ["blog",      "income",  180000, "계좌이체", "블로그 애드포스트", false, 6],
-      ["utility",   "expense", 120000, "계좌이체", "아파트 관리비", true, 13],
-      ["utility",   "expense",  62000, "신용카드", "핸드폰 요금", true, 10],
-      ["baby",      "expense",  42000, "신용카드", "이서 어린이집 특별활동비", true, 9],
-      ["living",    "expense",  86400, "신용카드", "이마트 장보기", false, 5],
-      ["living",    "expense",  29900, "체크카드", "다이소 수납용품", false, 4],
-      ["food",      "expense",  28500, "네이버페이", "배달의민족 저녁", false, 3],
-      ["food",      "expense",  12000, "신용카드", "김밥천국 점심", false, 1],
-      ["cafe",      "expense",  12500, "신용카드", "스타벅스", false, 2],
-      ["cafe",      "expense",   5600, "체크카드", "메가커피", false, 0],
-      ["pet",       "expense",  39800, "신용카드", "두부 사료", false, 7],
-      ["transport", "expense",  65000, "신용카드", "GS칼텍스 주유", false, 6],
+      ["salary",    "income", 3200000, "현금", "월급", true, 14],
+      ["allowance", "income",  500000, "현금", "아동수당·부모급여", false, 12],
+      ["blog",      "income",  180000, "현금", "블로그 애드포스트", false, 6],
+      ["utility",   "expense", 120000, "현금", "아파트 관리비", true, 13],
+      ["utility",   "expense",  62000, "현대카드", "핸드폰 요금", true, 10],
+      ["baby",      "expense",  42000, "신한카드", "이서 어린이집 특별활동비", true, 9],
+      ["living",    "expense",  86400, "현대카드", "이마트 장보기", false, 5],
+      ["living",    "expense",  29900, "신한카드", "다이소 수납용품", false, 4],
+      ["food",      "expense",  28500, "기타카드", "배달의민족 저녁", false, 3],
+      ["food",      "expense",  12000, "현대카드", "김밥천국 점심", false, 1],
+      ["cafe",      "expense",  12500, "신한카드", "스타벅스", false, 2],
+      ["cafe",      "expense",   5600, "오빠카드", "메가커피", false, 0],
+      ["pet",       "expense",  39800, "하나카드", "두부 사료", false, 7],
+      ["transport", "expense",  65000, "현대카드", "GS칼텍스 주유", false, 6],
       ["transport", "expense",   1400, "현금", "버스", false, 0],
-      ["medical",   "expense",  18000, "체크카드", "약국 감기약", false, 8],
-      ["shopping",  "expense",  21000, "신용카드", "올리브영", false, 11],
+      ["medical",   "expense",  18000, "하나카드", "약국 감기약", false, 8],
+      ["shopping",  "expense",  21000, "오빠카드", "올리브영", false, 11],
       ["etc",       "expense",   5000, "현금", "주차비", false, 2]
     ];
     defs.forEach(function(x, i){
@@ -1455,7 +1474,22 @@
   }
 
   /* ================= paste parser ================= */
-  var BRAND_RE = /(신한|국민|KB|삼성|현대|하나|롯데|우리|농협|NH|카카오뱅크|토스뱅크|카카오|토스|BC|씨티|IBK|기업은행|수협|신협|새마을|우체국|케이뱅크)/i;
+  var BRAND_RE = /(신한|국민|KB|삼성|현대|하나|롯데|우리|농협|NH|비씨|BC|씨티|IBK|기업은행|수협|신협|새마을|우체국|카카오뱅크|카카오페이|토스뱅크|토스|케이뱅크)/i;
+  var CARD_CTX_RE = /(카드|승인|일시불|할부|결제)/;
+  /* 알림 문자 → 결제수단 6종 매핑 (현대·신한·하나·오빠·현금·기타카드) */
+  function detectMethod(text){
+    var t = String(text||"");
+    if(CARD_CTX_RE.test(t)){
+      if(/오빠/.test(t)) return "오빠카드";
+      if(/현대/.test(t)) return "현대카드";
+      if(/신한/.test(t)) return "신한카드";
+      if(/하나/.test(t)) return "하나카드";
+      return "기타카드";
+    }
+    if(/(입금|출금|계좌|이체|현금|ATM|자동이체)/.test(t)) return "현금";
+    if(/오빠/.test(t)) return "오빠카드";
+    return form.method || DEFAULT_METHOD;
+  }
 
   function parseAmount(text){
     var re = /([0-9][0-9,\.]*)\s*원/g, m, cands = [];
@@ -1503,7 +1537,7 @@
     s = s.replace(/\d{1,2}:\d{2}(:\d{2})?/g," ");
     s = s.replace(/[0-9][0-9,\.]*\s*원/g," ");
     s = s.replace(/[가-힣]\s*\*+\s*[가-힣]?/g," ");
-    s = s.replace(/(KB국민카드|KB국민|NH농협카드|NH농협|IBK기업은행|카카오뱅크|토스뱅크|케이뱅크|신한카드|국민카드|삼성카드|현대카드|하나카드|롯데카드|우리카드|BC카드|씨티카드|농협카드|수협카드|신협카드)/gi," ");
+    s = s.replace(/(KB국민카드|KB국민|NH농협카드|NH농협|IBK기업은행|카카오뱅크|토스뱅크|케이뱅크|신한카드|국민카드|삼성카드|현대카드|하나카드|롯데카드|우리카드|BC카드|씨티카드|농협카드|수협카드|신협카드|오빠카드)/gi," ");
     s = s.replace(/(^|\s)(신한|국민|삼성|현대|하나|롯데|우리|농협|BC|씨티|IBK|수협|신협|새마을|우체국|KB|NH|은행|뱅크|카드)(카드|은행|뱅크|체크|페이)?(?=\s|$)/g," ");
     s = s.replace(/(승인|결제|출금|입금|체크|일시불|할부|누적|잔액|사용|완료|취소|환불|안내|알림|카드|계좌|이체|포인트|잔여|님|입니다|건)/g," ");
     s = s.replace(/[0-9]{2,}/g," ");
@@ -1545,12 +1579,7 @@
     var merchantFull = extractMerchant(text);
     var merchant = merchantFull.replace(/\s+/g," ").trim().slice(0,40);
 
-    var method;
-    if(/체크/.test(text)) method = "체크카드";
-    else if(/네이버페이|네이페이/.test(text)) method = "네이버페이";
-    else if(/입금|출금|계좌|이체/.test(text)) method = "계좌이체";
-    else if(BRAND_RE.test(text)) method = "신용카드";
-    else method = form.method || "신용카드";
+    var method = detectMethod(text);
 
     var category;
     var hay = (merchant + " " + text).toLowerCase();
@@ -1593,12 +1622,13 @@
   }
 
   var EXAMPLES = [
-    "[KB국민] 11/25 14:20 문*현님 12,500원 스타벅스 승인",
-    "신한카드(1234) 11/24 09:12 45,000원 이마트 체크 승인",
+    "[현대카드] 11/25 14:20 문*현님 12,500원 스타벅스 승인",
+    "신한카드(1234) 11/24 09:12 45,000원 이마트 승인",
+    "하나카드 11/24 18:30 6,200원 메가커피 승인",
+    "오빠카드 11/23 12:10 15,000원 김밥천국 승인",
+    "[국민카드] 11/23 19:45 28,500원 배달의민족 승인",
     "카카오뱅크 11/25 10:03 500,000원 입금 아동수당 잔액 1,320,500원",
-    "[삼성카드] 11/23 19:45 28,500원 배달의민족 승인",
-    "우리은행 11/22 08:30 65,000원 출금 GS칼텍스 잔액 840,000원",
-    "현대카드 11/21 16:05 39,800원 동물병원 승인"
+    "우리은행 11/22 08:30 65,000원 출금 GS칼텍스 잔액 840,000원"
   ];
   var exIdx = 0;
 
